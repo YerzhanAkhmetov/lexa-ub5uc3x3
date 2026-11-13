@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#151b35">
 <title>Догони Лёху!</title>
 <style>
@@ -449,6 +449,17 @@
     .brand-mark { display: none; }
     #hud .stat { padding: 4px 6px; }
   }
+  /* На телефоне оставляем движение Лёхи, но убираем постоянную анимацию декораций. */
+  @media (max-width: 700px) and (pointer: coarse) {
+    .cloud, .sky-sparkle, .house-window, .spectator, .spectator .arm,
+    .cheer-bubble, #sceneProp, #leha .fig, #leha .bubble { animation: none !important; }
+    .cheer-bubble.b1 { opacity: 1; }
+    #leha .head { filter: none; }
+    #leha.hit { animation: mobile-hit .18s ease-out; }
+  }
+  @keyframes mobile-hit {
+    50% { scale: calc(var(--s) * .92); rotate: -8deg; }
+  }
   @media (max-height: 570px) {
     .menu-card { padding: 18px 22px; }
     .eyebrow { margin-bottom: 8px; }
@@ -636,7 +647,6 @@ function fitScale() {
   document.documentElement.style.setProperty('--s', S);
 }
 fitScale();
-addEventListener('resize', fitScale);
 const CRIES = ['Помогите!', 'ПОМОГИТЕ!!!', 'Спасите!', 'Помогите!'];
 const SHOUTS = ['Ай!', 'Ой!', 'Больно!', 'За что?!', 'Аааа!', 'Хватит!', 'Уй!'];
 const HIT_VOICES = [['Ай!', 'ay'], ['Больно!', 'bolno'], ['Ой!', 'oy']];
@@ -647,9 +657,17 @@ const hitsEl = document.getElementById('hits');
 const secEl = document.getElementById('sec');
 const timeEl = document.getElementById('time');
 const $ = id => document.getElementById(id);
+const progressFill = $('progressFill');
 
 let x, y, vx, vy, mx = -999, my = -999;
 let hits = 0, endAt = 0, running = false, audio, danceTimer, cryTimer, cryIdx = 0, lastFrame = 0;
+let arenaW = 0, arenaH = 0, lastHudAt = 0;
+function refreshLayout() {
+  fitScale();
+  arenaW = arena.clientWidth;
+  arenaH = arena.clientHeight;
+}
+addEventListener('resize', refreshLayout);
 let level = 0, totalHits = 0, totalCarHits = 0;
 let soundOn = true;
 let carHits = 0, shoutUntil = 0, alarmUntil = 0, nextHitVoiceAt = 0;
@@ -912,7 +930,7 @@ function start() {
 }
 
 function startLevel() {
-  fitScale();
+  refreshLayout();
   clearInterval(danceTimer);
   clearInterval(cryTimer);
   clearTimeout(fistHide);
@@ -928,18 +946,18 @@ function startLevel() {
   carHits = 0; carHitsEl.textContent = 0; shoutUntil = 0; alarmUntil = 0;
   secEl.textContent = GAME_SEC;
   timeEl.classList.remove('low');
-  $('progressFill').style.transform = 'scaleX(1)';
+  progressFill.style.transform = 'scaleX(1)';
   lexus.querySelectorAll('.crack').forEach(c => c.remove());   // новая игра — целая машина
   lexus.classList.remove('wrecked', 'shake', 'alarm');
-  x = Math.max(0, arena.clientWidth / 2 - W / 2);
-  y = Math.min(Math.max(0, arena.clientHeight - H), Math.max(0, arena.clientHeight * FLOOR + 2));
+  x = Math.max(0, arenaW / 2 - W / 2);
+  y = Math.min(Math.max(0, arenaH - H), Math.max(0, arenaH * FLOOR + 2));
   vx = 4 * LEVELS[level].speed; vy = 0;
   leha.style.translate = `${x}px ${y}px`;
   leha.style.display = 'block';
   cry(); cryTimer = setInterval(cry, 1800);
   startBgMusic();
   endAt = performance.now() + GAME_SEC * 1000;
-  lastFrame = 0;
+  lastFrame = 0; lastHudAt = 0;
   running = true;
   if (soundOn) ctx().resume();
   requestAnimationFrame(tick);
@@ -947,15 +965,22 @@ function startLevel() {
 
 function tick(now) {
   if (!running) return;
-  // Скорость одинаковая на экранах 60/120 Гц; после свёрнутой вкладки нет рывка.
-  const dt = lastFrame ? Math.min(2, Math.max(0, (now - lastFrame) / (1000 / 60))) : 1;
-  lastFrame = now;
   const left = Math.max(0, endAt - now);
-  const seconds = Math.ceil(left / 1000);
-  if (secEl.textContent !== String(seconds)) secEl.textContent = seconds;
-  timeEl.classList.toggle('low', left < 5000);
-  $('progressFill').style.transform = `scaleX(${left / (GAME_SEC * 1000)})`;
-  if (left === 0) return finish(false);
+  if (left === 0) { secEl.textContent = 0; return finish(false); }
+  // На 90/120 Гц пропускаем лишние кадры; HUD обновляем 10 раз в секунду.
+  if (lastFrame && now - lastFrame < 14) {
+    requestAnimationFrame(tick);
+    return;
+  }
+  const dt = lastFrame ? Math.min(3, Math.max(0, (now - lastFrame) / (1000 / 60))) : 1;
+  lastFrame = now;
+  if (!lastHudAt || now - lastHudAt >= 100) {
+    lastHudAt = now;
+    const seconds = Math.ceil(left / 1000);
+    if (secEl.textContent !== String(seconds)) secEl.textContent = seconds;
+    timeEl.classList.toggle('low', left < 5000);
+    progressFill.style.transform = `scaleX(${left / (GAME_SEC * 1000)})`;
+  }
 
   // убегает от мышки
   const speed = LEVELS[level].speed;
@@ -970,11 +995,11 @@ function tick(now) {
   vx *= Math.pow(0.985, dt); vy *= Math.pow(0.985, dt);
   x += vx * dt; y += vy * dt;
 
-  const w = Math.max(0, arena.clientWidth - W), h = Math.max(0, arena.clientHeight - H);
+  const w = Math.max(0, arenaW - W), h = Math.max(0, arenaH - H);
   if (x < 0) { x = 0; vx = Math.abs(vx) + 2 * S * speed; }
   if (x > w) { x = w; vx = -Math.abs(vx) - 2 * S * speed; }
   // Верх персонажа остаётся ниже зрителей и дома.
-  const minY = Math.min(h, Math.max(TOP, arena.clientHeight * FLOOR));
+  const minY = Math.min(h, Math.max(TOP, arenaH * FLOOR));
   if (y < minY) { y = minY; vy = Math.abs(vy) + 0.5 * S * speed; }
   if (y > h) { y = h; vy = -Math.abs(vy) - 2 * S * speed; }
 
@@ -1018,7 +1043,7 @@ function hit(e) {
 function finish(won) {
   if (!running) return;
   running = false;
-  $('progressFill').style.transform = 'scaleX(0)';
+  progressFill.style.transform = 'scaleX(0)';
   leha.style.display = 'none';
   fist.style.display = bat.style.display = 'none';
   clearInterval(cryTimer);
@@ -1065,6 +1090,7 @@ function showWeapon(e) {
 document.addEventListener('pointermove', e => { if (e.pointerType === 'mouse') showWeapon(e); });
 
 arena.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'touch' && e.cancelable) e.preventDefault();
   aim(e);
   const w = showWeapon(e), cls = w === bat ? 'swing' : 'punch';
   w.classList.remove(cls); void w.offsetWidth; w.classList.add(cls);
@@ -1074,6 +1100,12 @@ arena.addEventListener('pointerdown', e => {
     fistHide = setTimeout(() => { fist.style.display = bat.style.display = 'none'; }, 350);
   }
 });
+let lastArenaTouchEnd = -Infinity;
+arena.addEventListener('touchend', e => {
+  const now = performance.now();
+  if (now - lastArenaTouchEnd < 350 && e.cancelable) e.preventDefault();
+  lastArenaTouchEnd = now;
+}, { passive: false });
 lexus.addEventListener('pointerdown', hitLexus);
 // палец убрали — Леха больше не шарахается от места касания
 arena.addEventListener('pointerup', e => { if (e.pointerType !== 'mouse') { mx = my = -999; } });
