@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Догони Леху</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #1d2433; color: #fff; user-select: none;
+  }
+  #hud {
+    position: fixed; top: 0; left: 0; right: 0; height: 64px; z-index: 5;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 24px; background: #141925; font-size: 22px; font-weight: 700;
+  }
+  #hud span b { color: #ffd23f; font-size: 30px; }
+  #time.low b { color: #ff5a5a; }
+  #arena {
+    position: fixed; top: 64px; left: 0; right: 0; bottom: 0;
+    cursor: none; overflow: hidden;
+    /* офис: стена сверху, плинтус, пол из плитки снизу */
+    background:
+      linear-gradient(#e9e4d8 0 42%, #8a6a4a 42% 43.5%, transparent 43.5%),
+      repeating-linear-gradient(90deg, transparent 0 79px, rgba(0,0,0,.08) 79px 80px),
+      repeating-linear-gradient(0deg, transparent 0 79px, rgba(0,0,0,.08) 79px 80px),
+      #c9ccd2;
+  }
+  /* декорации: только картинка, клики проходят сквозь них */
+  #decor { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  #decor > * { position: absolute; line-height: 1; }
+
+  .window {                                   /* окно с видом на город */
+    top: 6%; width: 150px; height: 26%; border: 8px solid #fff; border-radius: 4px;
+    background: linear-gradient(#7cc8f5, #cdeeff);
+    box-shadow: inset 0 0 0 2px #ccc, 0 4px 10px rgba(0,0,0,.15);
+  }
+  .window::before {                           /* перекладины рамы */
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent 48%, #fff 48% 52%, transparent 52%),
+                linear-gradient(transparent 48%, #fff 48% 52%, transparent 52%);
+  }
+  .window::after { content: "🏙️"; position: absolute; bottom: 2px; left: 50%; translate: -50% 0; font-size: 46px; }
+
+  .board {                                    /* маркерная доска */
+    top: 8%; width: 190px; height: 22%; background: #fff; border: 6px solid #9aa3ad; border-radius: 4px;
+    font: 700 16px/1.4 "Comic Sans MS", cursive; color: #2d6cdf; padding: 10px; box-sizing: border-box;
+  }
+  .clock { font-size: 46px; animation: tick 1s steps(2) infinite; }
+  @keyframes tick { 50% { rotate: 6deg; } }
+  .poster { font-size: 54px; top: 10%; background: #fff; padding: 6px; border: 3px solid #333; border-radius: 4px; }
+
+  .desk {                                     /* стол с компьютером */
+    width: 150px; height: 70px;
+  }
+  .desk .top { position: absolute; left: 0; right: 0; top: 30px; height: 14px; background: #a0703f; border-radius: 3px; }
+  .desk .leg { position: absolute; top: 44px; width: 10px; height: 46px; background: #6b4a2a; }
+  .desk .leg.l { left: 8px; } .desk .leg.r { right: 8px; }
+  .desk .pc { position: absolute; left: 20px; top: -22px; font-size: 52px; }
+  .desk .mug { position: absolute; right: 18px; top: 4px; font-size: 26px; }
+  .chair { font-size: 50px; }
+  .plant { font-size: 60px; }
+  .item { font-size: 50px; }
+  .paper { font-size: 26px; opacity: .85; rotate: 20deg; }
+  .lamp {                                     /* лампы на потолке */
+    top: 0; width: 120px; height: 10px; background: #fff; border-radius: 0 0 6px 6px;
+    box-shadow: 0 10px 40px 10px rgba(255,255,220,.7);
+  }
+  #leha {
+    position: absolute; width: 110px; height: 210px; cursor: none; display: none;
+    will-change: transform;
+  }
+  /* кулак вместо курсора: рисуем сами, клики пропускает сквозь себя */
+  #fist {
+    position: fixed; left: 0; top: 0; z-index: 4; font-size: 56px; line-height: 1;
+    margin: -28px 0 0 -28px; pointer-events: none; display: none;
+  }
+  #fist.punch { animation: punch .15s; }
+  @keyframes punch { 50% { scale: 1.5; rotate: -25deg; } }
+  /* бегущий человечек: наклон вперёд, руки и ноги машут */
+  #leha .fig { position: absolute; inset: 0; rotate: 10deg; animation: bob .15s infinite alternate; }
+  #leha .fig.left { scale: -1 1; rotate: -10deg; }
+  #leha .head {
+    /* овал в пропорциях фото (4:5) — лицо помещается целиком, круг его обрезал */
+    position: absolute; left: 5px; top: -25px; width: 100px; height: 125px; border-radius: 46%;
+    background: url(leha.png) center / cover; border: 3px solid #fff; z-index: 2;
+    box-shadow: 0 6px 18px rgba(0,0,0,.5);
+  }
+  #leha .body { position: absolute; left: 37px; top: 92px; width: 36px; height: 64px; background: #19b5e6; border-radius: 12px; }
+  #leha .limb { position: absolute; width: 12px; border-radius: 6px; transform-origin: 50% 6px; }
+  #leha .arm { height: 50px; top: 98px; left: 49px; background: #f0c8a8; }
+  #leha .leg { height: 60px; top: 148px; left: 49px; background: #33415f; }
+  #leha .arm.a { animation: swing .3s infinite alternate ease-in-out; }
+  #leha .arm.b { animation: swing .3s infinite alternate-reverse ease-in-out; }
+  #leha .leg.a { animation: swing .3s infinite alternate-reverse ease-in-out; }
+  #leha .leg.b { animation: swing .3s infinite alternate ease-in-out; }
+  @keyframes swing { from { transform: rotate(-55deg); } to { transform: rotate(55deg); } }
+  @keyframes bob { from { translate: 0 0; } to { translate: 0 -6px; } }
+  #leha .bubble {
+    position: absolute; top: -73px; left: 50%; translate: -50% 0; white-space: nowrap;
+    background: #fff; color: #e02020; font-size: 20px; font-weight: 900;
+    padding: 6px 14px; border-radius: 16px; animation: shout .25s infinite alternate;
+  }
+  #leha .bubble::after {
+    content: ""; position: absolute; left: 50%; bottom: -9px; margin-left: -8px;
+    border: 8px solid transparent; border-top-color: #fff; border-bottom: 0;
+  }
+  @keyframes shout { from { scale: 1; } to { scale: 1.15; } }
+  #leha.hit { animation: hit .25s; }
+  @keyframes hit {
+    0% { filter: none; scale: 1; }
+    40% { filter: brightness(1.6) sepia(1) hue-rotate(-50deg) saturate(4); scale: .8 1.15; rotate: -18deg; }
+    100% { filter: none; scale: 1; rotate: 0deg; }
+  }
+  .pop {
+    position: absolute; font-size: 30px; font-weight: 900; color: #ffd23f;
+    text-shadow: 0 2px 0 #000; pointer-events: none; animation: pop .8s forwards; z-index: 3;
+  }
+  @keyframes pop { to { transform: translateY(-70px) scale(1.4); opacity: 0; } }
+
+  .screen {
+    position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 20px; text-align: center;
+    background: rgba(20,25,37,.94); padding: 16px;
+  }
+  .screen h1 { margin: 0; font-size: clamp(34px, 7vw, 68px); }
+  .screen p { margin: 0; font-size: 20px; color: #c9d1e4; max-width: 520px; }
+  button {
+    font: inherit; font-size: 22px; font-weight: 700; padding: 14px 36px; border: 0;
+    border-radius: 14px; background: #ffd23f; color: #1d2433; cursor: pointer;
+  }
+  button:hover { background: #ffe07a; }
+  .hidden { display: none; }
+  .win h1 { color: #6ee37a; }
+  .lose h1 { color: #ff8a5a; }
+
+  /* плачущий Леха на экране победы */
+  #crier { position: relative; width: 170px; height: 255px; animation: sob .35s infinite alternate ease-in-out; }
+  #crier .head {
+    position: absolute; left: 5px; top: 0; width: 160px; height: 200px; border-radius: 46%;
+    background: url(leha.png) center / cover; border: 4px solid #fff;
+  }
+  #crier .tear {
+    position: absolute; top: 114px; width: 12px; height: 18px; background: #4fc3ff;
+    border-radius: 50% 50% 50% 50% / 65% 65% 35% 35%; animation: tear 1s infinite ease-in;
+  }
+  #crier .tear.t1 { left: 52px; }
+  #crier .tear.t2 { left: 100px; animation-delay: .35s; }
+  #crier .tear.t3 { left: 56px; animation-delay: .6s; }
+  #crier .tear.t4 { left: 96px; animation-delay: .85s; }
+  #crier .plaster { position: absolute; left: 96px; top: 26px; font-size: 38px; rotate: 25deg; }
+  @keyframes tear { from { transform: translateY(0); opacity: 1; } to { transform: translateY(110px); opacity: 0; } }
+  @keyframes sob { from { transform: translateY(0) rotate(-3deg); } to { transform: translateY(6px) rotate(3deg); } }
+
+  /* танцующий Леха */
+  #dancer { position: relative; width: 220px; height: 330px; margin-top: 32px; animation: sway .5s infinite alternate ease-in-out; }
+  #dancer .head {
+    position: absolute; left: 45px; top: -32px; width: 130px; height: 162px; border-radius: 46%;
+    background: url(leha.png) center / cover; border: 4px solid #fff; z-index: 2;
+    animation: nod .25s infinite alternate;
+  }
+  #dancer .body { position: absolute; left: 80px; top: 122px; width: 60px; height: 110px; background: #19b5e6; border-radius: 16px; }
+  #dancer .limb { position: absolute; width: 16px; background: #f0c8a8; border-radius: 8px; }
+  #dancer .arm { height: 90px; top: 128px; transform-origin: 50% 8px; }
+  #dancer .arm.l { left: 68px; animation: armL .5s infinite alternate; }
+  #dancer .arm.r { left: 136px; animation: armR .5s infinite alternate; }
+  #dancer .leg { height: 100px; top: 222px; background: #33415f; transform-origin: 50% 8px; }
+  #dancer .leg.l { left: 84px; animation: legL .5s infinite alternate; }
+  #dancer .leg.r { left: 120px; animation: legR .5s infinite alternate; }
+  @keyframes sway { from { transform: translateX(-30px) rotate(-6deg); } to { transform: translateX(30px) rotate(6deg); } }
+  @keyframes nod  { from { transform: translateY(0) rotate(-8deg); } to { transform: translateY(-10px) rotate(8deg); } }
+  @keyframes armL { from { transform: rotate(150deg); } to { transform: rotate(40deg); } }
+  @keyframes armR { from { transform: rotate(-40deg); } to { transform: rotate(-150deg); } }
+  @keyframes legL { from { transform: rotate(25deg); } to { transform: rotate(-10deg); } }
+  @keyframes legR { from { transform: rotate(10deg); } to { transform: rotate(-25deg); } }
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <span>👊 Ударов: <b id="hits">0</b></span>
+  <span id="time">⏱ <b id="sec">20</b> сек</span>
+</div>
+
+<div id="arena">
+  <div id="decor">
+    <!-- потолок и стена -->
+    <div class="lamp" style="left:15%"></div>
+    <div class="lamp" style="left:45%"></div>
+    <div class="lamp" style="left:75%"></div>
+    <div class="window" style="left:3%"></div>
+    <div class="board" style="left:20%">План на день:<br>✔ созвон<br>✘ поймать Леху</div>
+    <div class="clock" style="left:41%; top:9%">🕒</div>
+    <div class="poster" style="left:50%">📈</div>
+    <div class="window" style="left:62%"></div>
+    <div class="poster" style="left:80%">🏆</div>
+    <div class="item" style="left:92%; top:calc(42% - 54px)">🚪</div>
+
+    <!-- у стены -->
+    <div class="plant" style="left:1%;  top:calc(42% - 30px)">🪴</div>
+    <div class="item"  style="left:33%; top:calc(42% - 30px)">🖨️</div>
+    <div class="item"  style="left:56%; top:calc(42% - 30px)">🗄️</div>
+    <div class="item"  style="left:86%; top:calc(42% - 30px)">🚰</div>
+
+    <!-- столы с компьютерами -->
+    <div class="desk" style="left:6%;  top:52%"><div class="pc">🖥️</div><div class="mug">☕</div><div class="top"></div><div class="leg l"></div><div class="leg r"></div></div>
+    <div class="chair" style="left:9%;  top:66%">🪑</div>
+    <div class="desk" style="left:40%; top:52%"><div class="pc">💻</div><div class="mug">📎</div><div class="top"></div><div class="leg l"></div><div class="leg r"></div></div>
+    <div class="chair" style="left:43%; top:66%">🪑</div>
+    <div class="desk" style="left:72%; top:52%"><div class="pc">🖥️</div><div class="mug">☕</div><div class="top"></div><div class="leg l"></div><div class="leg r"></div></div>
+    <div class="chair" style="left:75%; top:66%">🪑</div>
+
+    <!-- бардак на полу -->
+    <div class="paper" style="left:25%; top:84%">📄</div>
+    <div class="paper" style="left:60%; top:90%; rotate:-30deg">📄</div>
+    <div class="item"  style="left:28%; top:76%; font-size:40px">🗑️</div>
+    <div class="plant" style="left:93%; top:80%">🪴</div>
+  </div>
+  <div id="leha">
+    <div class="bubble" id="bubble">Помогите!</div>
+    <div class="fig" id="fig">
+      <div class="limb arm a"></div><div class="limb leg a"></div>
+      <div class="body"></div>
+      <div class="limb arm b"></div><div class="limb leg b"></div>
+      <div class="head"></div>
+    </div>
+  </div>
+</div>
+
+<div id="fist">👊</div>
+
+<div id="start" class="screen">
+  <h1>Догони Леху!</h1>
+  <p>Леха убегает от мышки. Догони и кликай по нему. За 20 секунд нужно попасть <b>больше 10 раз</b>.</p>
+  <button id="btnStart">Начать</button>
+</div>
+
+<div id="win" class="screen win hidden">
+  <h1>🏆 Ты побил Леху!</h1>
+  <div id="crier">
+    <div class="head"></div>
+    <div class="plaster">🩹</div>
+    <div class="tear t1"></div><div class="tear t2"></div>
+    <div class="tear t3"></div><div class="tear t4"></div>
+  </div>
+  <p>Леха плачет 😭 Ударов: <b class="total"></b></p>
+  <button class="again">Ещё раз</button>
+</div>
+
+<div id="lose" class="screen lose hidden">
+  <h1>Не успел!</h1>
+  <div id="dancer">
+    <div class="limb arm l"></div><div class="limb arm r"></div>
+    <div class="limb leg l"></div><div class="limb leg r"></div>
+    <div class="body"></div><div class="head"></div>
+  </div>
+  <p>Ударов: <b class="total"></b> — нужно больше 10</p>
+  <button class="again">Ещё раз</button>
+</div>
+
+<script>
+const GAME_SEC = 20, NEED_MORE_THAN = 10, W = 110, H = 210, TOP = 80; // TOP — место под облачко
+const CRIES = ['Помогите!', 'ПОМОГИТЕ!!!', 'Спасите!', 'Помогите!'];
+const SHOUTS = ['Ай!', 'Ой!', 'Больно!', 'За что?!', 'Аааа!', 'Хватит!', 'Уй!'];
+
+const arena = document.getElementById('arena');
+const leha = document.getElementById('leha');
+const hitsEl = document.getElementById('hits');
+const secEl = document.getElementById('sec');
+const timeEl = document.getElementById('time');
+const $ = id => document.getElementById(id);
+
+let x, y, vx, vy, mx = -999, my = -999;
+let hits = 0, endAt = 0, running = false, audio, danceTimer, cryTimer, cryIdx = 0;
+const fig = document.getElementById('fig'), bubble = document.getElementById('bubble');
+
+// голосом кричит «Помогите!» (встроенный синтезатор речи браузера)
+function cry() {
+  bubble.textContent = CRIES[cryIdx++ % CRIES.length];
+  if (!window.speechSynthesis || speechSynthesis.speaking) return;
+  const u = new SpeechSynthesisUtterance('Помогите!');
+  u.lang = 'ru-RU'; u.rate = 1.05; u.pitch = 1.1; u.volume = 0.7;   // мягче: ниже, медленнее, тише
+  speechSynthesis.speak(u);
+}
+
+// --- звук: всё синтезируется, файлов не нужно ---
+function ctx() { return audio || (audio = new (window.AudioContext || window.webkitAudioContext)()); }
+
+function scream() {
+  const a = ctx(), t = a.currentTime;
+  const osc = a.createOscillator(), gain = a.createGain(), lfo = a.createOscillator(), lfoGain = a.createGain();
+  const base = 600 + Math.random() * 500;
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(base, t);
+  osc.frequency.linearRampToValueAtTime(base * 1.4, t + 0.08);
+  osc.frequency.exponentialRampToValueAtTime(base * 0.45, t + 0.45);
+  lfo.frequency.value = 28; lfoGain.gain.value = 40;      // дрожание голоса
+  lfo.connect(lfoGain).connect(osc.frequency);
+  gain.gain.setValueAtTime(0.0001, t);
+  gain.gain.exponentialRampToValueAtTime(0.35, t + 0.03);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+  osc.connect(gain).connect(a.destination);
+  osc.start(t); lfo.start(t); osc.stop(t + 0.5); lfo.stop(t + 0.5);
+}
+
+function beep(freq, dur) {
+  const a = ctx(), t = a.currentTime, osc = a.createOscillator(), gain = a.createGain();
+  osc.type = 'square'; osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.12, t);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  osc.connect(gain).connect(a.destination);
+  osc.start(t); osc.stop(t + dur);
+}
+
+// --- фоновая музыка во время игры ---
+// Если рядом лежит music.mp3 — играет он; нет файла — своя 8-битная мелодия.
+const bgFile = new Audio('music.mp3');
+bgFile.loop = true; bgFile.volume = 0.5;
+let bgFileOk = true, bgTimer;
+bgFile.addEventListener('error', () => { bgFileOk = false; });
+
+// своя мелодия: [частота, длительность в шагах]; 0 — пауза
+const TUNE = [
+  [659,1],[784,1],[880,2],[784,1],[659,1],[587,2],
+  [523,1],[587,1],[659,1],[784,1],[659,2],[0,2],
+  [880,1],[988,1],[1047,2],[988,1],[880,1],[784,2],
+  [659,1],[784,1],[587,1],[659,1],[523,2],[0,2],
+];
+const BASS = [131, 131, 196, 196, 175, 175, 196, 196];
+
+function startBgMusic() {
+  stopBgMusic();
+  if (bgFileOk) {
+    bgFile.currentTime = 0;
+    bgFile.play().catch(() => { bgFileOk = false; startBgMusic(); });
+    return;
+  }
+  const step = 0.14;             // секунд на шаг
+  let i = 0, wait = 0, beat = 0;
+  bgTimer = setInterval(() => {
+    if (beat % 2 === 0) bass(BASS[(beat / 2) % BASS.length]);
+    beat++;
+    if (wait-- > 0) return;
+    const [f, len] = TUNE[i++ % TUNE.length];
+    if (f) beep(f, step * len * 0.9);
+    wait = len - 1;
+  }, 140);
+}
+
+function stopBgMusic() {
+  clearInterval(bgTimer);
+  bgFile.pause();
+}
+
+function bass(freq) {
+  const a = ctx(), t = a.currentTime, osc = a.createOscillator(), gain = a.createGain();
+  osc.type = 'triangle'; osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.18, t);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
+  osc.connect(gain).connect(a.destination);
+  osc.start(t); osc.stop(t + 0.14);
+}
+
+// мягкая нота для победной мелодии: синус + тихий обертон, плавное затухание
+function bell(freq, start, dur, vol = 0.18) {
+  const a = ctx(), t = a.currentTime + start;
+  [[1, vol], [2, vol * 0.25]].forEach(([mul, v]) => {
+    const osc = a.createOscillator(), gain = a.createGain();
+    osc.type = mul === 1 ? 'triangle' : 'sine';
+    osc.frequency.value = freq * mul;
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(v, t + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(gain).connect(a.destination);
+    osc.start(t); osc.stop(t + dur + 0.05);
+  });
+}
+
+// победная мелодия: восходящее арпеджио, тема и финальный аккорд (до мажор)
+function winMusic() {
+  const s = 0.16;  // шаг, сек
+  const melody = [
+    [523,0],[659,1],[784,2],[1047,3],            // арпеджио вверх
+    [988,5],[1047,6],[1175,7],[1319,8],           // тема
+    [1175,10],[1047,11],[1319,12],[1568,14],
+  ];
+  melody.forEach(([f, i]) => bell(f, i * s, 0.5));
+  [262, 330, 392, 523].forEach(f => bell(f, 16 * s, 1.8, 0.12));   // аккорд
+  bell(1047, 16 * s, 1.8, 0.14);
+  return 16 * s + 1.6;   // сколько длится, сек
+}
+
+// всхлипы: короткие ноты, сползающие вниз
+function sobSound() {
+  const a = ctx(), t = a.currentTime, osc = a.createOscillator(), gain = a.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(520, t);
+  osc.frequency.exponentialRampToValueAtTime(300, t + 0.3);
+  gain.gain.setValueAtTime(0.0001, t);
+  gain.gain.exponentialRampToValueAtTime(0.25, t + 0.04);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+  osc.connect(gain).connect(a.destination);
+  osc.start(t); osc.stop(t + 0.32);
+}
+
+// хлопок/хэт: короткий шум
+function hat(vol = 0.06) {
+  const a = ctx(), t = a.currentTime, len = 0.05;
+  const buf = a.createBuffer(1, a.sampleRate * len, a.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  const src = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain();
+  src.buffer = buf; f.type = 'highpass'; f.frequency.value = 6000;
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+  src.connect(f).connect(g).connect(a.destination); src.start(t);
+}
+
+// бочка: низкий «бум» со спадом частоты
+function kick() {
+  const a = ctx(), t = a.currentTime, osc = a.createOscillator(), g = a.createGain();
+  osc.frequency.setValueAtTime(150, t); osc.frequency.exponentialRampToValueAtTime(45, t + 0.15);
+  g.gain.setValueAtTime(0.5, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+  osc.connect(g).connect(a.destination); osc.start(t); osc.stop(t + 0.22);
+}
+
+// танцевальный цикл: бочка, хэт, прыгающий бас и мягкая мелодия (ля минор, 16 шагов)
+function startDanceMusic() {
+  const BASS16 = [110,0,220,0, 110,0,220,110, 131,0,262,0, 98,0,196,98];
+  const MEL16  = [880,0,0,784, 0,659,0,0, 784,0,880,0, 659,0,587,0];
+  let i = 0;
+  danceTimer = setInterval(() => {
+    const s = i % 16;
+    if (s % 4 === 0) kick();
+    if (s % 2 === 1) hat();
+    if (BASS16[s]) bass(BASS16[s]);
+    if (MEL16[s] && i >= 16) bell(MEL16[s], 0, 0.3, 0.12);   // мелодия вступает со второго такта
+    i++;
+  }, 130);
+}
+
+// --- игра ---
+function start() {
+  clearInterval(danceTimer);
+  ['start', 'win', 'lose'].forEach(id => $(id).classList.add('hidden'));
+  hits = 0; hitsEl.textContent = 0;
+  x = arena.clientWidth / 2 - W / 2; y = arena.clientHeight / 2 - H / 2;
+  vx = 4; vy = -3;
+  leha.style.display = 'block';
+  clearInterval(cryTimer);
+  cry(); cryTimer = setInterval(cry, 1800);
+  startBgMusic();
+  endAt = performance.now() + GAME_SEC * 1000;
+  running = true;
+  ctx().resume();
+  requestAnimationFrame(tick);
+}
+
+function tick(now) {
+  if (!running) return;
+  const left = Math.max(0, endAt - now);
+  secEl.textContent = Math.ceil(left / 1000);
+  timeEl.classList.toggle('low', left < 5000);
+  if (left === 0) return finish();
+
+  // убегает от мышки
+  const dx = x + W / 2 - mx, dy = y + H / 2 - my, dist = Math.hypot(dx, dy) || 1;
+  if (dist < 200) { const f = (200 - dist) / 200 * 0.9; vx += dx / dist * f; vy += dy / dist * f; }
+  // лёгкое блуждание, чтобы не стоял на месте
+  vx += (Math.random() - 0.5) * 0.5; vy += (Math.random() - 0.5) * 0.5;
+
+  const sp = Math.hypot(vx, vy), max = 5;   // предел скорости: меньше — легче поймать
+  if (sp > max) { vx = vx / sp * max; vy = vy / sp * max; }
+  vx *= 0.985; vy *= 0.985;
+  x += vx; y += vy;
+
+  const w = arena.clientWidth - W, h = arena.clientHeight - H;
+  if (x < 0) { x = 0; vx = Math.abs(vx) + 2; }
+  if (x > w) { x = w; vx = -Math.abs(vx) - 2; }
+  // ноги не выше линии пола (стена — верхние 43.5% поля, как в фоне #arena)
+  const minY = Math.min(h, Math.max(TOP, arena.clientHeight * 0.435 - H + 20));
+  if (y < minY) { y = minY; vy = Math.abs(vy) + 2; }
+  if (y > h) { y = h; vy = -Math.abs(vy) - 2; }
+
+  if (Math.abs(vx) > 0.5) fig.classList.toggle('left', vx < 0);   // лицом туда, куда бежит
+
+  leha.style.transform = `translate(${x}px, ${y}px)`;
+  requestAnimationFrame(tick);
+}
+
+function hit(e) {
+  if (!running) return;
+  hits++; hitsEl.textContent = hits;
+  scream();
+
+  leha.classList.remove('hit'); void leha.offsetWidth; leha.classList.add('hit');
+
+  const r = arena.getBoundingClientRect(), pop = document.createElement('div');
+  pop.className = 'pop';
+  pop.textContent = SHOUTS[Math.floor(Math.random() * SHOUTS.length)];
+  pop.style.left = (e.clientX - r.left - 20) + 'px';
+  pop.style.top = (e.clientY - r.top - 50) + 'px';
+  arena.appendChild(pop);
+  setTimeout(() => pop.remove(), 800);
+
+  // после удара отскакивает в случайную сторону
+  const ang = Math.random() * Math.PI * 2;
+  vx = Math.cos(ang) * 5; vy = Math.sin(ang) * 5;
+}
+
+function finish() {
+  running = false;
+  leha.style.display = 'none';
+  clearInterval(cryTimer);
+  stopBgMusic();
+  if (window.speechSynthesis) speechSynthesis.cancel();
+  const won = hits > NEED_MORE_THAN, screen = $(won ? 'win' : 'lose');
+  screen.querySelector('.total').textContent = hits;
+  screen.classList.remove('hidden');
+  if (won) {
+    const len = winMusic();
+    // всхлипы — после мелодии; danceTimer переиспользуем: start() его и так останавливает
+    danceTimer = setTimeout(() => { danceTimer = setInterval(sobSound, 450); }, len * 1000);
+  }
+  else startDanceMusic();
+}
+
+arena.addEventListener('mousemove', e => {
+  const r = arena.getBoundingClientRect();
+  mx = e.clientX - r.left; my = e.clientY - r.top;
+});
+
+const fist = document.getElementById('fist');
+document.addEventListener('mousemove', e => {
+  fist.style.display = running && e.clientY > 64 ? 'block' : 'none';   // 64 — высота верхней полосы
+  fist.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
+});
+arena.addEventListener('mousedown', () => {
+  fist.classList.remove('punch'); void fist.offsetWidth; fist.classList.add('punch');
+});
+leha.addEventListener('mousedown', hit);
+$('btnStart').addEventListener('click', start);
+document.querySelectorAll('.again').forEach(b => b.addEventListener('click', start));
+</script>
+</body>
+</html>
